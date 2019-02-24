@@ -1,4 +1,3 @@
-// +build example jsgo
 package main
 
 // imported packages, most of them are for the golang game engine
@@ -40,34 +39,26 @@ var (
   count = 0
 )
 
-type Enemy struct {
+// basic information to draw sprites, track position and update position
+type Body struct {
+    // positions
     x float64 
     y float64
-    // number of frames to iterate across, 1 for now
-    // spriteAnimNum int
     // velocities
     vx float64 
     vy float64
-    // unique identifer
-    // num int 
-    // number in sheet.xml
-    sp int
     // get height and width from sheet.xml using sp
     width int 
     height int 
 }
 
+type Enemy struct {
+    Body 
+    sp int
+}
+
 type Laser struct {
-    x float64 
-    y float64
-    // number of frames to iterate across, 1 for now
-    // spriteAnimNum int
-    // velocities
-    vx float64 
-    vy float64
-    // unique identifer
-    // num int 
-    // number in sheet.xml
+    Body
     sp int
 }
 
@@ -76,19 +67,14 @@ type Game struct {
     Val   string
     // tracks location of player and maybe health
     Player struct {
-        x         float64
-        y         float64
+        Body
         health    int
         laserType int 
-        vx        float64
-        vy        float64
         canShoot  bool
         sp        int
         // consider adding in height and width of player object
         // all of the sprites seem to be the same
         // TODO set global width
-        width    int 
-        height   int 
     }
     PLasers []*Laser
     Enemies []*Enemy
@@ -148,15 +134,14 @@ func (g *Game) init() {
         
     _, _, _, width, height := utils.ImageData(images[playerSpriteStartNum])
 	g.Val = "Testing"
-	g.Player.x = ScreenWidth / 2
-    g.Player.y = ScreenHeight - 100
-    g.Player.vx = 5
-    g.Player.vy = 5
     g.Player.canShoot = true 
     g.Player.sp = playerSpriteStartNum
-    g.Player.width = width 
-    g.Player.height = height
-
+    g.Player.Body.x = ScreenWidth / 2
+    g.Player.Body.y = ScreenHeight - 100
+    g.Player.Body.vx = 5
+    g.Player.Body.vy = 5
+    g.Player.Body.width = width 
+    g.Player.Body.height = height
     g.addEnemy(50)
 }
 
@@ -190,7 +175,7 @@ func (g *Game) checkCollisions() {
         go func() {
             for _ = range collisionTicker.C {
                 // fmt.Println("Can shoot laser")
-                collision := g.enemyPlayerCollided(s)
+                collision := g.checkPlayerEnemyCollision(s)
                 fmt.Println(collision)
             }
         }()
@@ -201,7 +186,34 @@ func (g *Game) checkCollisions() {
 	}
 }
 
-func (g* Game) enemyPlayerCollided(s *Enemy) (bool) {
+// Collision Functions
+
+func (g* Game) checkPlayerEnemyCollision(e* Enemy) (bool) {
+    // fmt.Println(g.Player.Body)
+    return BodyCollided(&e.Body,&g.Player.Body)
+}
+// check if bodies have collided
+func BodyCollided(r1 *Body,  r2 *Body) (bool) {
+    // compute rectangle 1
+    r1L, r1R, r1T, r1B := ComputeRect(r1)
+    // compute rectangle 2
+    r2L, r2R, r2T, r2B := ComputeRect(r2)
+    // fmt.Println(r1L, r1R, r1T, r1B)
+    // fmt.Println(r2L, r2R, r2T, r2B)
+    return (r1L < r2R && r1R > r2L &&
+        r1B > r2T && r1T < r2B)
+}
+
+func ComputeRect(rect *Body) (float64, float64, float64, float64) {
+    rectL := rect.x - float64(rect.width / 2)
+    rectR := rect.x + float64(rect.width / 2)
+    rectT := rect.y - float64(rect.height / 2)
+    rectB := rect.y + float64(rect.height / 2)
+
+    return rectL, rectR, rectT, rectB
+}
+
+/* func (g* Game) enemyPlayerCollided(s *Enemy) (bool) {
     p := g.Player
 
     eleft := s.x - float64(s.width / 2)
@@ -218,7 +230,7 @@ func (g* Game) enemyPlayerCollided(s *Enemy) (bool) {
         ebottom > ptop && etop < pbottom)
     // return (RectA.X1 < RectB.X2 && RectA.X2 > RectB.X1 &&
     //    RectA.Y1 > RectB.Y2 && RectA.Y2 < RectB.Y1) 
-}
+} */
 
 func (g *Game) removeLaser(i int) {
     s := g.PLasers
@@ -254,14 +266,15 @@ func (g *Game) shootLaser() {
  */
 // adding new 
 func (g *Game) addLaser() {
-    px := g.Player.x 
-    py := g.Player.y 
+    px := g.Player.Body.x 
+    py := g.Player.Body.y 
     // vx not used outside of initialization
     vx := 1.00
     vy := 3.00
     snum := 1
+    _, _, _, width, height := utils.ImageData(images[snum])
     // fmt.Println("shooting a laser")
-    g.PLasers = append(g.PLasers, &Laser{px,py,vx,vy,snum})
+    g.PLasers = append(g.PLasers, &Laser{Body{px, py, vx, vy, width, height}, snum})
 
 }
 
@@ -269,14 +282,14 @@ func (g *Game) addLaser() {
 // sum is the sprite num corresponding to sheet.xml
 func (g *Game) addEnemy(snum int) {
 
-    px := g.Player.x
+    px := g.Player.Body.x
     py := float64(ScreenHeight / 2) 
-    vx := 1.00
+    vx := 0.00
     vy := 3.00
 
     _, _, _, width, height := utils.ImageData(images[snum])
     // fmt.Println("shooting a laser")
-    g.Enemies = append(g.Enemies, &Enemy{px,py,vx,vy,snum,width,height})
+    g.Enemies = append(g.Enemies, &Enemy{Body{px, py, vx, vy, width, height}, snum})
 
 }
 
@@ -290,7 +303,7 @@ func (g *Game) drawShip(screen *ebiten.Image) {
 	op := &ebiten.DrawImageOptions{}
     // move to player location
     i := (count / 10) % 7
-    op.GeoM.Translate(g.Player.x, g.Player.y)
+    op.GeoM.Translate(g.Player.Body.x, g.Player.Body.y)
     // player ships from number 207 to 215
 	_, x, y, width, height := utils.ImageData(images[playerSpriteStartNum+i])
 	op.Filter = ebiten.FilterLinear
@@ -300,16 +313,18 @@ func (g *Game) drawShip(screen *ebiten.Image) {
 // move and draw lasers
 func (g *Game) moveAndDrawEnemies(screen *ebiten.Image) {
     for i := 0; i < len(g.Enemies); i++ {
+        // update enemies
         s := g.Enemies[i]
+        if (s.x < 0 ) {
+            g.Enemies[i].Body.vx = -g.Enemies[i].Body.vx
+        } else if (s.x > ScreenWidth) {
+            g.Enemies[i].Body.vx = -g.Enemies[i].Body.vx
+        }
+        g.Enemies[i].Body.x += g.Enemies[i].Body.vx
+        // draw image
         _, x, y, width, height := utils.ImageData(images[s.sp])
         op := &ebiten.DrawImageOptions{}
-        op.GeoM.Translate(float64(s.x), float64(s.y))
-        if (s.x < 0 ) {
-            g.Enemies[i].vx = -g.Enemies[i].vx
-        } else if (s.x > ScreenWidth) {
-            g.Enemies[i].vx = -g.Enemies[i].vx
-        }
-        g.Enemies[i].x += g.Enemies[i].vx
+        op.GeoM.Translate(float64(s.Body.x), float64(s.Body.y))
         screen.DrawImage(gameImages.SubImage(image.Rect(x, y, x+width, y+height)).(*ebiten.Image), op)
 	}
 }
@@ -362,14 +377,14 @@ func (g *Game) moveShip() {
 	// Controls
 	if ebiten.IsKeyPressed(ebiten.KeyA) || ebiten.IsKeyPressed(ebiten.KeyLeft) {
 		// Selects preloaded sprite
-		g.Player.x -= g.Player.vx
+		g.Player.Body.x -= g.Player.Body.vx
 	} else if ebiten.IsKeyPressed(ebiten.KeyD) || ebiten.IsKeyPressed(ebiten.KeyRight) {
 		// Moves character 3px left
-		g.Player.x += g.Player.vx
+		g.Player.Body.x += g.Player.Body.vx
 	} else if ebiten.IsKeyPressed(ebiten.KeyW) || ebiten.IsKeyPressed(ebiten.KeyUp) {
-		g.Player.y -= g.Player.vy
+		g.Player.Body.y -= g.Player.Body.vy
 	} else if ebiten.IsKeyPressed(ebiten.KeyS) || ebiten.IsKeyPressed(ebiten.KeyDown) {
-        g.Player.y += g.Player.vy
+        g.Player.Body.y += g.Player.Body.vy
   }
 }
 

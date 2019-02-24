@@ -85,7 +85,7 @@ func ReadImageData(imagePath string) ([]XMLImage, error) {
     xmlImages, err := ReadImages(file)
     if err != nil {
         fmt.Println(err)
-        os.Exit(1)
+        // os.Exit(1)
     }
 
 	return xmlImages, nil
