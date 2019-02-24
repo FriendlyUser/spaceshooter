@@ -17,7 +17,16 @@ before_script:
   - go get -u github.com/gopherjs/gopherjs
   - go get -u github.com/gopherjs/gopherwasm/js
 script:
-  - gopherjs build -o spaceshooter.js github.com/FriendlyUser/spaceshooter
+  - gopherjs build -o web/spaceshooter.js github.com/FriendlyUser/spaceshooter
+
+deploy:
+  provider: pages
+  skip-cleanup: true
+  local-dir: web
+  github-token: $GITHUB_API_KEY  # Set in the settings page of your repository, as a secure variable
+  keep-history: true
+  on:
+    branch: master
 
 deploy:
   provider: releases
