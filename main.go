@@ -32,6 +32,8 @@ var (
   // global metadata for images from sheet.xml
   images, _ = utils.ReadImageData("resources/sheet.xml")
   // delay beginning on ticker until actually game mode
+  // collision checker 
+  collisionTicker = time.NewTicker(250 * time.Millisecond)
   shootTicker = time.NewTicker(2000 * time.Millisecond)
   gameImages *ebiten.Image
   bgImage *ebiten.Image
@@ -51,6 +53,8 @@ type Enemy struct {
     // number in sheet.xml
     sp int
     // get height and width from sheet.xml using sp
+    width int 
+    height int 
 }
 
 type Laser struct {
@@ -78,10 +82,13 @@ type Game struct {
         laserType int 
         vx        float64
         vy        float64
-        canShoot  bool 
+        canShoot  bool
+        sp        int
         // consider adding in height and width of player object
         // all of the sprites seem to be the same
         // TODO set global width
+        width    int 
+        height   int 
     }
     PLasers []*Laser
     Enemies []*Enemy
@@ -138,14 +145,19 @@ func NewGame() *Game {
 
 // initial Player
 func (g *Game) init() {
+        
+    _, _, _, width, height := utils.ImageData(images[playerSpriteStartNum])
 	g.Val = "Testing"
 	g.Player.x = ScreenWidth / 2
     g.Player.y = ScreenHeight - 100
     g.Player.vx = 5
     g.Player.vy = 5
     g.Player.canShoot = true 
-    
-    g.addEnemy()
+    g.Player.sp = playerSpriteStartNum
+    g.Player.width = width 
+    g.Player.height = height
+
+    g.addEnemy(50)
 }
 
 // main game loop
@@ -166,9 +178,46 @@ func (g *Game) Update(screen *ebiten.Image) error {
     // maybe goroutine some of this
     g.moveAndDrawLasers(screen)
     g.moveAndDrawEnemies(screen)
+    g.checkCollisions()
     // g.drawLasers(screen)
     g.drawShip(screen)
     return nil
+}
+
+func (g *Game) checkCollisions() {
+    for i := 0; i < len(g.Enemies); i++ {
+        s := g.Enemies[i]
+        go func() {
+            for _ = range collisionTicker.C {
+                // fmt.Println("Can shoot laser")
+                collision := g.enemyPlayerCollided(s)
+                fmt.Println(collision)
+            }
+        }()
+
+        // for j :=0; j < len(g.PLasers); j++ {
+        //    pl := g.PLasers[j]
+        // }
+	}
+}
+
+func (g* Game) enemyPlayerCollided(s *Enemy) (bool) {
+    p := g.Player
+
+    eleft := s.x - float64(s.width / 2)
+    eright := s.x + float64(s.width / 2)
+    etop := s.y - float64(s.height / 2)
+    ebottom := s.y + float64(s.height / 2)
+
+    pleft := p.x - float64(p.width / 2)
+    pright := p.x + float64(p.width / 2)
+    ptop := p.y - float64(p.height / 2)
+    pbottom := p.y + float64(p.height / 2)
+
+    return (eleft < pright && eright > pleft &&
+        ebottom > ptop && etop < pbottom)
+    // return (RectA.X1 < RectB.X2 && RectA.X2 > RectB.X1 &&
+    //    RectA.Y1 > RectB.Y2 && RectA.Y2 < RectB.Y1) 
 }
 
 func (g *Game) removeLaser(i int) {
@@ -217,16 +266,17 @@ func (g *Game) addLaser() {
 }
 
 // TODO Make the spawn location within a randomized region
-// 
-func (g *Game) addEnemy() {
+// sum is the sprite num corresponding to sheet.xml
+func (g *Game) addEnemy(snum int) {
+
     px := g.Player.x
     py := float64(ScreenHeight / 2) 
     vx := 1.00
     vy := 3.00
-    // enemy sprites start around 50
-    snum := 50
+
+    _, _, _, width, height := utils.ImageData(images[snum])
     // fmt.Println("shooting a laser")
-    g.Enemies = append(g.Enemies, &Enemy{px,py,vx,vy,snum})
+    g.Enemies = append(g.Enemies, &Enemy{px,py,vx,vy,snum,width,height})
 
 }
 
@@ -254,13 +304,13 @@ func (g *Game) moveAndDrawEnemies(screen *ebiten.Image) {
         _, x, y, width, height := utils.ImageData(images[s.sp])
         op := &ebiten.DrawImageOptions{}
         op.GeoM.Translate(float64(s.x), float64(s.y))
-        screen.DrawImage(gameImages.SubImage(image.Rect(x, y, x+width, y+height)).(*ebiten.Image), op)
         if (s.x < 0 ) {
             g.Enemies[i].vx = -g.Enemies[i].vx
         } else if (s.x > ScreenWidth) {
             g.Enemies[i].vx = -g.Enemies[i].vx
         }
         g.Enemies[i].x += g.Enemies[i].vx
+        screen.DrawImage(gameImages.SubImage(image.Rect(x, y, x+width, y+height)).(*ebiten.Image), op)
 	}
 }
 
