@@ -9,12 +9,13 @@ go:
 # Probably not used
 go_import_path: github.com/pkg/foo
 
-before_script:
+before_install:
+  - sudo apt-get update
   - sudo apt install -y libc6-dev libglu1-mesa-dev libgles2-mesa-dev libxrandr-dev libxcursor-dev libxinerama-dev libxi-dev libasound2-dev
-  # Gopherjs
+before_script:
+  # Get Gopherjs
+  - go get -u github.com/gopherjs/gopherjs
 script:
-  - # Golang Dependencies
-  - go get ./...
   - gopherjs build -o spaceshooter.js github.com/FriendlyUser/spaceshooter
 
 deploy:
