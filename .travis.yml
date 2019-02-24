@@ -15,6 +15,7 @@ before_install:
 before_script:
   # Get Gopherjs
   - go get -u github.com/gopherjs/gopherjs
+  - go get -u github.com/gopherjs/gopherwasm/js
 script:
   - gopherjs build -o spaceshooter.js github.com/FriendlyUser/spaceshooter
 
