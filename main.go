@@ -29,7 +29,7 @@ const (
 // game images
 var (
   // global metadata for images from sheet.xml
-  images, _ = utils.ReadImageData("resources/sheet.xml")
+  images, _ = utils.ReadImageData()
   // delay beginning on ticker until actually game mode
   // collision checker 
   collisionTicker = time.NewTicker(250 * time.Millisecond)

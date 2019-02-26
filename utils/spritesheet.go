@@ -2,16 +2,20 @@
 Sheet.xml contains data on the open source CC0 sprites I am using for this project 
 */
 
+// TODO find a method export all the data in sheet.xml to a hardcoded xml file in go or json file so that the game works on the web.
+// OR use file2byteslice and decode from golang file.
+
 package utils
+// package utils
 // RENAME package to package utils after testing is complete
 
 import (
     "encoding/xml"
     "fmt"
     "io"
-    "os"
-	"path/filepath"
-	"strconv"
+    "bytes"
+    "strconv"
+    sprites "github.com/FriendlyUser/spaceshooter/spritedata"
 )
 
 // Properties of a XMLImage are defined by the spritesheet
@@ -60,8 +64,18 @@ func ReadImagesStruct(reader io.Reader) (*XMLImages, error) {
     return xmlImages.Images, nil
 }
 
+func ReadImageData() ([]XMLImage, error) {
+    var xmlImages XMLImages
+    rawdata := bytes.NewReader(sprites.Sheet_xml)
+    if err := xml.NewDecoder(rawdata).Decode(&xmlImages); err != nil {
+        return nil, err
+    }
+	return xmlImages.Images, nil
+}
+
 // TODO Replace os.exit with error message
-func ReadImageData(imagePath string) ([]XMLImage, error) {
+// LOAD data from gofile.
+/* func ReadImageData(imagePath string) ([]XMLImage, error) {
     // Build the location of the sheet.xml file
 	// filepath.Abs appends the file name to the default working directly,
 	// take input parameter to path.
@@ -90,7 +104,7 @@ func ReadImageData(imagePath string) ([]XMLImage, error) {
 
 	return xmlImages, nil
 
-}
+} */
 
 // returns subset of images for animation.
 func imageSplice(xmlImages []XMLImage,start int ,end int) ([]XMLImage, error) {
@@ -116,7 +130,7 @@ func ImageData(image XMLImage) (string, int, int, int, int) {
 func main() {
     // Build the location of the straps.xml file
 	// filepath.Abs appends the file name to the default working directly
-	xmlImages, _  := ReadImageData("../resources/sheet.xml")
+	xmlImages, _  := ReadImageData()
 	beamImages, _ := imageSplice(xmlImages,0,7)
     for i := 0; i < 7; i++ {
 		name, x ,y, _, _ := ImageData(beamImages[i])
