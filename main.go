@@ -11,6 +11,7 @@ import (
     "github.com/hajimehoshi/ebiten"
     "github.com/hajimehoshi/ebiten/ebitenutil"
     "time"
+    "math/rand"
     utils "github.com/FriendlyUser/spaceshooter/utils"
     resources "github.com/FriendlyUser/spaceshooter/resources"
     // "github.com/hajimehoshi/go-inovation/ino/internal/input"
@@ -32,6 +33,7 @@ var (
   images, _ = utils.ReadImageData()
   // delay beginning on ticker until actually game mode
   // collision checker 
+  collisionTicker2 = time.NewTicker(250 * time.Millisecond)
   collisionTicker = time.NewTicker(250 * time.Millisecond)
   shootTicker = time.NewTicker(2000 * time.Millisecond)
   gameImages *ebiten.Image
@@ -100,7 +102,7 @@ func init() {
 // background image logic from 
 // # https://github.com/hajimehoshi/ebiten/blob/master/examples/infinitescroll/main.go
 var (
-	theViewport = &viewport{}
+    theViewport = &viewport{}
 )
 
 type viewport struct {
@@ -129,6 +131,11 @@ func NewGame() *Game {
 	return g
 }
 
+// random number generation
+func init() {
+    rand.Seed(time.Now().UnixNano())
+}
+
 // initial Player
 func (g *Game) init() {
         
@@ -143,6 +150,8 @@ func (g *Game) init() {
     g.Player.Body.width = width 
     g.Player.Body.height = height
     g.addEnemy(50)
+    g.addEnemy(53)
+    g.addEnemy(55)
 }
 
 // main game loop
@@ -169,26 +178,43 @@ func (g *Game) Update(screen *ebiten.Image) error {
     return nil
 }
 
+// not sure if I should "goroutine it all"
 func (g *Game) checkCollisions() {
-    for i := 0; i < len(g.Enemies); i++ {
-        s := g.Enemies[i]
-        go func() {
-            for _ = range collisionTicker.C {
-                // fmt.Println("Can shoot laser")
-                collision := g.checkPlayerEnemyCollision(s)
-                fmt.Println(collision)
-            }
-        }()
+    go func() {
+        for _ = range collisionTicker.C {
+        for i := 0; i < len(g.Enemies); i++ {
+            s := g.Enemies[i]
+            // since we are only checking collision between all enemies and a single player, this approach is fine
 
-        // for j :=0; j < len(g.PLasers); j++ {
-        //    pl := g.PLasers[j]
-        // }
-	}
+            // fmt.Println("Can shoot laser")
+            pHit := g.checkPlayerEnemyCollision(s)
+            if (pHit) {
+                g.Player.health -= 3
+                fmt.Println("Collision: Enemy:", i , "Player")
+            }
+            for j :=0; j < len(g.PLasers); j++ {
+
+                eHit := g.checkEnemyLaserCollision(s,j)
+                if (eHit) {
+                    g.Player.health -= 3
+                    fmt.Println("Collision: Enemy:", i , "Laser:", j)
+                    eHit = false
+                }
+            }
+        }
+        }
+    }()
 }
 
 // Collision Functions
 
-func (g* Game) checkPlayerEnemyCollision(e* Enemy) (bool) {
+func (g* Game) checkEnemyLaserCollision(e* Enemy, j int) (bool) {
+    p := g.PLasers[j]
+    return BodyCollided(&e.Body, &p.Body)
+}
+
+// check laserEnemyCollision
+func  (g* Game) checkPlayerEnemyCollision(e* Enemy) (bool) {
     // fmt.Println(g.Player.Body)
     return BodyCollided(&e.Body,&g.Player.Body)
 }
@@ -236,6 +262,7 @@ func (g *Game) removeLaser(i int) {
     s := g.PLasers
     s[i] = s[len(s)-1]
     g.PLasers = s[:len(s)-1]
+    // fmt.Println(g.PLasers)
     // https://stackoverflow.com/questions/37334119/how-to-delete-an-element-from-array-in-golang/37335777
     // s[i] = s[len(s)-1]
     // # We do not need to put s[i] at the end, as it will be discarded anyway
@@ -281,11 +308,12 @@ func (g *Game) addLaser() {
 // TODO Make the spawn location within a randomized region
 // sum is the sprite num corresponding to sheet.xml
 func (g *Game) addEnemy(snum int) {
-
-    px := g.Player.Body.x
+    emax := 5 
+    emin := -5
+    px := float64(rand.Intn(ScreenWidth))
     py := float64(ScreenHeight / 2) 
-    vx := 0.00
-    vy := 3.00
+    vx := float64(emin + rand.Intn(emax-emin+1))
+    vy := float64(emin + rand.Intn(emax-emin+1))
 
     _, _, _, width, height := utils.ImageData(images[snum])
     // fmt.Println("shooting a laser")
