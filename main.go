@@ -2,6 +2,7 @@ package main
 
 // imported packages, most of them are for the golang game engine
 import (
+    "image/color"
     "bytes"
     "image"
     "fmt"
@@ -33,9 +34,8 @@ var (
   images, _ = utils.ReadImageData()
   // delay beginning on ticker until actually game mode
   // collision checker 
-  collisionTicker2 = time.NewTicker(250 * time.Millisecond)
-  collisionTicker = time.NewTicker(250 * time.Millisecond)
-  shootTicker = time.NewTicker(2000 * time.Millisecond)
+  collisionTicker = time.NewTicker(125 * time.Millisecond)
+  shootTicker = time.NewTicker(125 * time.Millisecond)
   gameImages *ebiten.Image
   bgImage *ebiten.Image
   count = 0
@@ -57,6 +57,7 @@ type Body struct {
 type Enemy struct {
     Body 
     sp int
+    health int
 }
 
 type Laser struct {
@@ -121,6 +122,12 @@ func (p *viewport) Move() {
 	p.y16 %= maxY16
 }
 
+// player health bar
+var (
+    playerHB *ebiten.Image
+    playerHBoutline *ebiten.Image
+)
+
 func (p *viewport) Position() (int, int) {
 	return p.x16, p.y16
 }
@@ -149,9 +156,24 @@ func (g *Game) init() {
     g.Player.Body.vy = 5
     g.Player.Body.width = width 
     g.Player.Body.height = height
-    g.addEnemy(50)
-    g.addEnemy(53)
-    g.addEnemy(55)
+    g.Player.health = 100
+
+    g.addEnemyRand(50)
+    g.addEnemyRand(53)
+    g.addEnemyRand(55)
+    g.addEnemyRand(50)
+    g.addEnemyRand(53)
+    g.addEnemyRand(55)
+    g.addEnemyRand(50)
+    g.addEnemyRand(53)
+
+    g.addEnemyRand(55)
+
+    g.addEnemyRand(55)
+    g.addEnemyRand(50)
+    g.addEnemyRand(53)
+    g.addEnemyRand(55)
+
 }
 
 // main game loop
@@ -173,6 +195,7 @@ func (g *Game) Update(screen *ebiten.Image) error {
     g.moveAndDrawLasers(screen)
     g.moveAndDrawEnemies(screen)
     g.checkCollisions()
+    g.drawHealthBar(screen)
     // g.drawLasers(screen)
     g.drawShip(screen)
     return nil
@@ -199,6 +222,10 @@ func (g *Game) checkCollisions() {
                     g.Player.health -= 3
                     fmt.Println("Collision: Enemy:", i , "Laser:", j)
                     eHit = false
+                    g.removeLaser(j)
+                    g.Enemies[i].health -= 3
+                    // remove enemy, convert to explosion object that will be erased later
+
                 }
             }
         }
@@ -258,10 +285,25 @@ func ComputeRect(rect *Body) (float64, float64, float64, float64) {
     //    RectA.Y1 > RectB.Y2 && RectA.Y2 < RectB.Y1) 
 } */
 
+// since I am using goroutines I need to check if the specified enemy exists every time this function 
+// is called
+func (g *Game) removeEnemy(i int) {
+    s := g.Enemies
+    if i >=0 && i < len(s) {
+        g.Enemies = append(s[:i], s[i+1:]...)
+    }
+    // fmt.Println(g.PLasers)
+    // https://stackoverflow.com/questions/37334119/how-to-delete-an-element-from-array-in-golang/37335777
+    // s[i] = s[len(s)-1]
+    // # We do not need to put s[i] at the end, as it will be discarded anyway
+    //return s[:len(s)-1]
+}
+
 func (g *Game) removeLaser(i int) {
     s := g.PLasers
-    s[i] = s[len(s)-1]
-    g.PLasers = s[:len(s)-1]
+    if i >=0 && i < len(s) {
+        g.PLasers = append(s[:i], s[i+1:]...)
+    }
     // fmt.Println(g.PLasers)
     // https://stackoverflow.com/questions/37334119/how-to-delete-an-element-from-array-in-golang/37335777
     // s[i] = s[len(s)-1]
@@ -307,17 +349,19 @@ func (g *Game) addLaser() {
 
 // TODO Make the spawn location within a randomized region
 // sum is the sprite num corresponding to sheet.xml
-func (g *Game) addEnemy(snum int) {
+func (g *Game) addEnemyRand(snum int) {
     emax := 5 
     emin := -5
     px := float64(rand.Intn(ScreenWidth))
-    py := float64(ScreenHeight / 2) 
+    py := float64(rand.Intn(ScreenHeight / 2) + ScreenHeight / 4) 
     vx := float64(emin + rand.Intn(emax-emin+1))
     vy := float64(emin + rand.Intn(emax-emin+1))
 
     _, _, _, width, height := utils.ImageData(images[snum])
+
+    health := 2
     // fmt.Println("shooting a laser")
-    g.Enemies = append(g.Enemies, &Enemy{Body{px, py, vx, vy, width, height}, snum})
+    g.Enemies = append(g.Enemies, &Enemy{Body{px, py, vx, vy, width, height}, snum, health})
 
 }
 
@@ -341,8 +385,13 @@ func (g *Game) drawShip(screen *ebiten.Image) {
 // move and draw lasers
 func (g *Game) moveAndDrawEnemies(screen *ebiten.Image) {
     for i := 0; i < len(g.Enemies); i++ {
-        // update enemies
         s := g.Enemies[i]
+        // destroy enemy if health is low
+        if (s.health < 0) {
+            g.removeEnemy(i)
+            continue
+        }
+        // update enemies
         if (s.x < 0 ) {
             g.Enemies[i].Body.vx = -g.Enemies[i].Body.vx
         } else if (s.x > ScreenWidth) {
@@ -398,6 +447,39 @@ func ScrollBG(screen *ebiten.Image) {
 			screen.DrawImage(bgImage, op)
 		}
     }
+}
+
+// draw health bar and player ship 
+
+func (g *Game) drawHealthBar(screen *ebiten.Image) {
+    w := 10
+    h := 10
+    health := g.Player.health
+    _, _, _, width, height := utils.ImageData(images[13])
+    if playerHBoutline == nil {
+        // Create an 16x16 image
+        playerHBoutline, _ = ebiten.NewImage(width-5, height-5, ebiten.FilterNearest)
+    } 
+
+    // Fill the square with the white color
+    playerHBoutline.Fill(color.NRGBA{0xff, 0x00, 0x00, 0xff})
+    op := &ebiten.DrawImageOptions{}
+    op.GeoM.Translate(float64(w+1), float64(h+1))
+
+    // Draw the square image to the screen with an empty option
+    screen.DrawImage(playerHBoutline, op)
+    if health > 0 {
+        playerHB, _ = ebiten.NewImage(health*width/100, height, ebiten.FilterNearest)
+    }
+    playerHB.Fill(color.NRGBA{0x00, 0xff, 0x00, 0xff})
+    // if playerHB == nil {
+    // Create an 16x16 image    
+   
+    // } 
+    op = &ebiten.DrawImageOptions{}
+    op.GeoM.Translate(float64(w), float64(h))
+    screen.DrawImage(playerHB, op)
+
 }
 
 // TODO Handle out of bounds cases

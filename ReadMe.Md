@@ -5,6 +5,9 @@
 2. Have basic game.
 
 
+### Todo Right now 
+
+- Let enemies shoot bullets, random spawning enemy function, health bar, player damaged by bullets, enemy destroyed and creates explosion class.
 ### Current Tasks
 
 1. Create Enemy Class, types corresponding to images and/or movement speeds, maybe random number that represents sprites.
