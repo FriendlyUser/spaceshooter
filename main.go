@@ -17,6 +17,11 @@ import (
     resources "github.com/FriendlyUser/spaceshooter/resources"
     // "github.com/hajimehoshi/go-inovation/ino/internal/input"
     // "github.com/hajimehoshi/ebiten/inpututil"
+    "github.com/golang/freetype/truetype"
+    "golang.org/x/image/font"
+    "github.com/hajimehoshi/ebiten/examples/resources/fonts"
+    "github.com/hajimehoshi/ebiten/inpututil"
+	"github.com/hajimehoshi/ebiten/text"
 )
 
 // hardcoded animation and sprite numbers from resources/sheet.xml
@@ -26,6 +31,8 @@ const (
   ScreenWidth = 1920
   ScreenHeight = 1440
   ScaleFactor = 0.5
+  fontSize         = 64
+  smallFontSize    = fontSize / 2
 )
 
 // game images
@@ -34,13 +41,12 @@ var (
   images, _ = utils.ReadImageData()
   // delay beginning on ticker until actually game mode
   // collision checker 
-  collisionTicker = time.NewTicker(125 * time.Millisecond)
-  shootTicker = time.NewTicker(125 * time.Millisecond)
   gameImages *ebiten.Image
   bgImage *ebiten.Image
   count = 0
 )
 
+// consider having a laser type to deal with orientation, etc
 // basic information to draw sprites, track position and update position
 type Body struct {
     // positions
@@ -65,9 +71,37 @@ type Laser struct {
     sp int
 }
 
+type Mode int
+const (
+	ModeTitle Mode = iota
+	ModeGame
+	ModeGameOver
+)
+var (
+    arcadeFont      font.Face
+	smallArcadeFont font.Face
+)
+// fonts and sizes
+func init() {
+	tt, err := truetype.Parse(fonts.ArcadeN_ttf)
+	if err != nil {
+		log.Fatal(err)
+	}
+	const dpi = 72
+	arcadeFont = truetype.NewFace(tt, &truetype.Options{
+		Size:    fontSize,
+		DPI:     dpi,
+		Hinting: font.HintingFull,
+	})
+	smallArcadeFont = truetype.NewFace(tt, &truetype.Options{
+		Size:    smallFontSize,
+		DPI:     dpi,
+		Hinting: font.HintingFull,
+	})
+}
 // in the future have a laser type struct, spriteImgNum, and number of animations
 type Game struct {
-    Val   string
+    mode Mode
     // tracks location of player and maybe health
     Player struct {
         Body
@@ -81,6 +115,7 @@ type Game struct {
     }
     PLasers []*Laser
     Enemies []*Enemy
+    gameoverCount int
 }
 
 // load images
@@ -147,7 +182,6 @@ func init() {
 func (g *Game) init() {
         
     _, _, _, width, height := utils.ImageData(images[playerSpriteStartNum])
-	g.Val = "Testing"
     g.Player.canShoot = true 
     g.Player.sp = playerSpriteStartNum
     g.Player.Body.x = ScreenWidth / 2
@@ -176,59 +210,120 @@ func (g *Game) init() {
 
 }
 
+// copied from flappyplane, but basic functionality any key pressed
+func jump() bool {
+	if inpututil.IsKeyJustPressed(ebiten.KeySpace) {
+		return true
+	}
+	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
+		return true
+	}
+	if len(inpututil.JustPressedTouchIDs()) > 0 {
+		return true
+	}
+	return false
+}
+
 // main game loop
 func (g *Game) Update(screen *ebiten.Image) error {
-    if ebiten.IsDrawingSkipped() {
-		return nil
+    switch g.mode {
+    // allow user to jump from title screen
+    // and title screen
+    case ModeTitle:
+        msg := []string{
+			"Game Created Using Ebiten",
+			"Created By David Li.",
+		}
+		for i, l := range msg {
+            x := (ScreenWidth - len(l)) / 2
+            y := (ScreenHeight) / 2
+			text.Draw(screen, l, smallArcadeFont, x, y + i*40, color.White)
+		}
+        if jump() {
+			g.mode = ModeGame
+        }
+    // main game mode with enemies, move objects and draw objects
+    // main game loop
+    case ModeGame:
+        if ebiten.IsDrawingSkipped() {
+            return nil
+        }
+        // draw background
+        ScrollBG(screen)
+        // TPS counter
+        fps := fmt.Sprintf("TPS: %f", ebiten.CurrentTPS())
+        ebitenutil.DebugPrint(screen, fps)
+        // show if ship should move
+        g.moveShip()
+        // check if laser is shot
+        g.shootLaser()
+        // draw and update lasers
+        // maybe goroutine some of this
+        g.moveAndDrawLasers(screen)
+        g.moveAndDrawEnemies(screen)
+        g.checkCollisions()
+        g.drawHealthBar(screen)
+        // g.drawLasers(screen)
+        g.drawShip(screen)   
+        // check if game over
+        g.checkGameOver()
+    // game over instance
+    case ModeGameOver:
+        // TODO DELETE ALL LASER, RESET PLAYER HEALTH, ETC, or add it to init
+        msg := []string{
+			"Game Over :(",
+			"Created By David Li.",
+		}
+		for i, l := range msg {
+            x := (ScreenWidth - len(l)) / 2
+            y := (ScreenHeight) / 2
+			text.Draw(screen, l, smallArcadeFont, x, y + i*40, color.White)
+		}
+        if g.gameoverCount > 0 {
+            g.gameoverCount--
+        }
+        if g.gameoverCount == 0 && jump() {
+            g.init()
+            g.mode = ModeTitle
+        }
     }
-    // draw background
-    ScrollBG(screen)
-    // TPS counter
-    fps := fmt.Sprintf("TPS: %f", ebiten.CurrentTPS())
-    ebitenutil.DebugPrint(screen, fps)
-    // show if ship should move
-    g.moveShip()
-    // check if laser is shot
-    g.shootLaser()
-    // draw and update lasers
-    // maybe goroutine some of this
-    g.moveAndDrawLasers(screen)
-    g.moveAndDrawEnemies(screen)
-    g.checkCollisions()
-    g.drawHealthBar(screen)
-    // g.drawLasers(screen)
-    g.drawShip(screen)
     return nil
 }
 
 // not sure if I should "goroutine it all"
+// goroutine still causes issues, I think I want collisions to be synced.
 func (g *Game) checkCollisions() {
     go func() {
+        collisionTicker := time.NewTicker(125 * time.Millisecond)
+        defer collisionTicker.Stop()
         for _ = range collisionTicker.C {
-        for i := 0; i < len(g.Enemies); i++ {
-            s := g.Enemies[i]
-            // since we are only checking collision between all enemies and a single player, this approach is fine
+            for i := 0; i < len(g.Enemies); i++ {
+                s := g.Enemies[i]
+                // since we are only checking collision between all enemies and a single player, this approach is fine
 
-            // fmt.Println("Can shoot laser")
-            pHit := g.checkPlayerEnemyCollision(s)
-            if (pHit) {
-                g.Player.health -= 3
-                fmt.Println("Collision: Enemy:", i , "Player")
-            }
-            for j :=0; j < len(g.PLasers); j++ {
-
-                eHit := g.checkEnemyLaserCollision(s,j)
-                if (eHit) {
+                // fmt.Println("Can shoot laser")
+                pHit := g.checkPlayerEnemyCollision(s)
+                if (pHit) {
                     g.Player.health -= 3
-                    fmt.Println("Collision: Enemy:", i , "Laser:", j)
-                    eHit = false
-                    g.removeLaser(j)
-                    g.Enemies[i].health -= 3
-                    // remove enemy, convert to explosion object that will be erased later
+                    fmt.Println("Collision: Enemy:", i , "Player")
+                }
+                for j :=0; j < len(g.PLasers); j++ {
 
+                    eHit := g.checkEnemyLaserCollision(s,j)
+                    if (eHit) {
+                        g.Player.health -= 0
+                        fmt.Println("Collision: Enemy:", i , "Laser:", j)
+                        eHit = false
+                        g.removeLaser(j)
+                        // make sure enemy exists before removing in, thats what you got to do with goroutines
+                        if len(g.Enemies) > i {
+                            g.Enemies[i].health -= 3
+                        }
+                        // remove enemy, convert to explosion object that will be erased later
+
+                    }
                 }
             }
-        }
         }
     }()
 }
@@ -290,7 +385,8 @@ func ComputeRect(rect *Body) (float64, float64, float64, float64) {
 func (g *Game) removeEnemy(i int) {
     s := g.Enemies
     if i >=0 && i < len(s) {
-        g.Enemies = append(s[:i], s[i+1:]...)
+        s[i] = s[len(s)-1]
+        g.Enemies =  s[:len(s)-1]
     }
     // fmt.Println(g.PLasers)
     // https://stackoverflow.com/questions/37334119/how-to-delete-an-element-from-array-in-golang/37335777
@@ -301,8 +397,9 @@ func (g *Game) removeEnemy(i int) {
 
 func (g *Game) removeLaser(i int) {
     s := g.PLasers
-    if i >=0 && i < len(s) {
-        g.PLasers = append(s[:i], s[i+1:]...)
+    if i >= 0 && i < len(s) {
+        s[i] = s[len(s)-1]
+        g.PLasers =  s[:len(s)-1]
     }
     // fmt.Println(g.PLasers)
     // https://stackoverflow.com/questions/37334119/how-to-delete-an-element-from-array-in-golang/37335777
@@ -322,7 +419,9 @@ func (g *Game) shootLaser() {
         }
     }
     go func() {
-        for _ = range shootTicker.C {
+        shootticker := time.NewTicker(125 * time.Millisecond)
+        defer shootticker.Stop()
+        for _ = range shootticker.C {
             // fmt.Println("Can shoot laser")
             g.Player.canShoot = true
         }
@@ -340,10 +439,29 @@ func (g *Game) addLaser() {
     // vx not used outside of initialization
     vx := 1.00
     vy := 3.00
-    snum := 1
+    snum := 105
     _, _, _, width, height := utils.ImageData(images[snum])
     // fmt.Println("shooting a laser")
     g.PLasers = append(g.PLasers, &Laser{Body{px, py, vx, vy, width, height}, snum})
+
+}
+
+
+// TODO FInish this function
+// ADD SPECIFIC FUNCTIONALITY for enemy
+func (g *Game) addEnemyLoc(snum int) {
+    emax := 5 
+    emin := -5
+    px := float64(rand.Intn(ScreenWidth))
+    py := float64(rand.Intn(ScreenHeight / 2) + ScreenHeight / 4) 
+    vx := float64(emin + rand.Intn(emax-emin+1))
+    vy := float64(emin + rand.Intn(emax-emin+1))
+
+    _, _, _, width, height := utils.ImageData(images[snum])
+
+    health := 2
+    // fmt.Println("shooting a laser")
+    g.Enemies = append(g.Enemies, &Enemy{Body{px, py, vx, vy, width, height}, snum, health})
 
 }
 
@@ -380,6 +498,39 @@ func (g *Game) drawShip(screen *ebiten.Image) {
 	_, x, y, width, height := utils.ImageData(images[playerSpriteStartNum+i])
 	op.Filter = ebiten.FilterLinear
 	screen.DrawImage(gameImages.SubImage(image.Rect(x, y, x+width, y+height)).(*ebiten.Image), op)
+}
+
+
+// draw health bar
+func (g *Game) drawHealthBar(screen *ebiten.Image) {
+    w := 10
+    h := 10
+    health := g.Player.health
+    _, _, _, width, height := utils.ImageData(images[13])
+    if playerHBoutline == nil {
+        // Create an 16x16 image
+        playerHBoutline, _ = ebiten.NewImage(width-5, height-5, ebiten.FilterNearest)
+    } 
+
+    // Fill the square with the white color
+    playerHBoutline.Fill(color.NRGBA{0xff, 0x00, 0x00, 0xff})
+    op := &ebiten.DrawImageOptions{}
+    op.GeoM.Translate(float64(w+1), float64(h+1))
+
+    // Draw the square image to the screen with an empty option
+    screen.DrawImage(playerHBoutline, op)
+    if health > 0 {
+        playerHB, _ = ebiten.NewImage(health*width/100, height, ebiten.FilterNearest)
+    }
+    playerHB.Fill(color.NRGBA{0x00, 0xff, 0x00, 0xff})
+    // if playerHB == nil {
+    // Create an 16x16 image    
+   
+    // } 
+    op = &ebiten.DrawImageOptions{}
+    op.GeoM.Translate(float64(w), float64(h))
+    screen.DrawImage(playerHB, op)
+
 }
 
 // move and draw lasers
@@ -449,39 +600,6 @@ func ScrollBG(screen *ebiten.Image) {
     }
 }
 
-// draw health bar and player ship 
-
-func (g *Game) drawHealthBar(screen *ebiten.Image) {
-    w := 10
-    h := 10
-    health := g.Player.health
-    _, _, _, width, height := utils.ImageData(images[13])
-    if playerHBoutline == nil {
-        // Create an 16x16 image
-        playerHBoutline, _ = ebiten.NewImage(width-5, height-5, ebiten.FilterNearest)
-    } 
-
-    // Fill the square with the white color
-    playerHBoutline.Fill(color.NRGBA{0xff, 0x00, 0x00, 0xff})
-    op := &ebiten.DrawImageOptions{}
-    op.GeoM.Translate(float64(w+1), float64(h+1))
-
-    // Draw the square image to the screen with an empty option
-    screen.DrawImage(playerHBoutline, op)
-    if health > 0 {
-        playerHB, _ = ebiten.NewImage(health*width/100, height, ebiten.FilterNearest)
-    }
-    playerHB.Fill(color.NRGBA{0x00, 0xff, 0x00, 0xff})
-    // if playerHB == nil {
-    // Create an 16x16 image    
-   
-    // } 
-    op = &ebiten.DrawImageOptions{}
-    op.GeoM.Translate(float64(w), float64(h))
-    screen.DrawImage(playerHB, op)
-
-}
-
 // TODO Handle out of bounds cases
 func (g *Game) moveShip() {
 	// Controls
@@ -496,6 +614,13 @@ func (g *Game) moveShip() {
 	} else if ebiten.IsKeyPressed(ebiten.KeyS) || ebiten.IsKeyPressed(ebiten.KeyDown) {
         g.Player.Body.y += g.Player.Body.vy
   }
+}
+
+// functions to check if game is over, level should proceed, perhaps even boss level
+func (g *Game) checkGameOver() {
+    if g.Player.health < 0 {
+        g.mode = ModeGameOver
+    }
 }
 
 func main() {
