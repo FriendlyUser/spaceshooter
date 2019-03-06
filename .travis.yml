@@ -19,7 +19,8 @@ before_script:
 script:
   - gopherjs build -o spaceshooter.js github.com/FriendlyUser/spaceshooter
   - GOOS=windows GOARCH=386 go build -o spaceshooter.exe main.go
-  - GOOS=darwin GOARCH=amd64 go build -o spaceshooter.dmg main.go
+  # No idea how to get mac working
+  - GOOS=linux GOARCH=amd64 go build -o spaceshooter.exe main.go
 
 deploy:
   provider: pages
