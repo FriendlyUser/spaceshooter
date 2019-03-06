@@ -244,6 +244,7 @@ func (g *Game) Update(screen *ebiten.Image) error {
         }
     // main game mode with enemies, move objects and draw objects
     // main game loop
+    // TODO refactor to separate movement and drawing, perhaps for efficiency reasons
     case ModeGame:
         if ebiten.IsDrawingSkipped() {
             return nil
@@ -290,42 +291,36 @@ func (g *Game) Update(screen *ebiten.Image) error {
     return nil
 }
 
-// not sure if I should "goroutine it all"
+// not sure if I should "goroutine it all", it appears game is using goroutines already
 // goroutine still causes issues, I think I want collisions to be synced.
 func (g *Game) checkCollisions() {
-    go func() {
-        collisionTicker := time.NewTicker(125 * time.Millisecond)
-        defer collisionTicker.Stop()
-        for _ = range collisionTicker.C {
-            for i := 0; i < len(g.Enemies); i++ {
-                s := g.Enemies[i]
-                // since we are only checking collision between all enemies and a single player, this approach is fine
+    for i := 0; i < len(g.Enemies); i++ {
+        s := g.Enemies[i]
+        // since we are only checking collision between all enemies and a single player, this approach is fine
 
-                // fmt.Println("Can shoot laser")
-                pHit := g.checkPlayerEnemyCollision(s)
-                if (pHit) {
-                    g.Player.health -= 3
-                    fmt.Println("Collision: Enemy:", i , "Player")
+        // fmt.Println("Can shoot laser")
+        pHit := g.checkPlayerEnemyCollision(s)
+        if (pHit) {
+            g.Player.health -= 3
+            fmt.Println("Collision: Enemy:", i , "Player")
+        }
+        for j :=0; j < len(g.PLasers); j++ {
+
+            eHit := g.checkEnemyLaserCollision(s,j)
+            if (eHit) {
+                g.Player.health -= 0
+                fmt.Println("Collision: Enemy:", i , "Laser:", j)
+                eHit = false
+                g.removeLaser(j)
+                // make sure enemy exists before removing in, thats what you got to do with goroutines
+                if len(g.Enemies) > i {
+                    g.Enemies[i].health -= 3
                 }
-                for j :=0; j < len(g.PLasers); j++ {
+                // remove enemy, convert to explosion object that will be erased later
 
-                    eHit := g.checkEnemyLaserCollision(s,j)
-                    if (eHit) {
-                        g.Player.health -= 0
-                        fmt.Println("Collision: Enemy:", i , "Laser:", j)
-                        eHit = false
-                        g.removeLaser(j)
-                        // make sure enemy exists before removing in, thats what you got to do with goroutines
-                        if len(g.Enemies) > i {
-                            g.Enemies[i].health -= 3
-                        }
-                        // remove enemy, convert to explosion object that will be erased later
-
-                    }
-                }
             }
         }
-    }()
+    }
 }
 
 // Collision Functions

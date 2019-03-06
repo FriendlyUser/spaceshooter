@@ -18,6 +18,8 @@ before_script:
   - go get -u github.com/gopherjs/gopherwasm/js
 script:
   - gopherjs build -o spaceshooter.js github.com/FriendlyUser/spaceshooter
+  - GOOS=windows GOARCH=386 go build -o spaceshooter.exe main.go
+  - GOOS=darwin GOARCH=amd64 go build -o spaceshooter.dmg main.go
 
 deploy:
   provider: pages
@@ -32,8 +34,9 @@ deploy:
   provider: releases
   api_key: $GITHUB_API_KEY
   file:
-    - "web/spaceshooter.js"
-    - "web/index.html"
+    - "spaceshooter.js"
+    - "spaceshooter.exe"
+    - "spaceshooter.dmg"
   skip_cleanup: true
   on:
     tags: true
