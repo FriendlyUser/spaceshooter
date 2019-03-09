@@ -7,7 +7,6 @@ import (
     "image"
     "fmt"
     _ "image/png"
-    "math"
     "log"
     "github.com/hajimehoshi/ebiten"
     "github.com/hajimehoshi/ebiten/ebitenutil"
@@ -17,6 +16,9 @@ import (
     resources "github.com/FriendlyUser/spaceshooter/resources"
     // "github.com/hajimehoshi/go-inovation/ino/internal/input"
     // "github.com/hajimehoshi/ebiten/inpututil"
+    "github.com/hajimehoshi/ebiten/audio"
+    "github.com/hajimehoshi/ebiten/audio/wav"
+	"github.com/hajimehoshi/ebiten/audio/vorbis"
     "github.com/golang/freetype/truetype"
     "golang.org/x/image/font"
     "github.com/hajimehoshi/ebiten/examples/resources/fonts"
@@ -46,6 +48,48 @@ var (
   count = 0
 )
 
+const (
+    loopLengthInSecond  = 17
+)
+// sounds 
+var (
+	audioContext *audio.Context
+	laserPlayer  *audio.Player
+	musicPlayer  *audio.Player
+)
+
+func init() {
+    // sampling := 
+	audioContext, _ = audio.NewContext(22050)
+
+	laser, err := wav.Decode(audioContext, audio.BytesReadSeekCloser(resources.Laser_wav))
+	if err != nil {
+		log.Fatal(err)
+	}
+    laserPlayer, err = audio.NewPlayer(audioContext, laser)
+	if err != nil {
+		log.Fatal(err)
+    }
+    laserPlayer.SetVolume(0.25)
+
+
+    oggS, err := vorbis.Decode(audioContext, audio.BytesReadSeekCloser(resources.OST_ogg))
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    // Create an infinite loop stream from the decoded bytes.
+    // s is still an io.ReadCloser and io.Seeker.
+    s := audio.NewInfiniteLoop(oggS, loopLengthInSecond*600*22050)
+
+    musicPlayer, err = audio.NewPlayer(audioContext, s)
+    if err != nil {
+        log.Fatal(err)
+    }
+    musicPlayer.SetVolume(0.5)
+    // Play the infinite-length stream. This never ends.
+    musicPlayer.Play()
+}
 // consider having a laser type to deal with orientation, etc
 // basic information to draw sprites, track position and update position
 type Body struct {
@@ -260,11 +304,12 @@ func (g *Game) Update(screen *ebiten.Image) error {
         // maybe goroutine some of this
         g.moveAndDrawLasers(screen)
         g.moveAndDrawEnemies(screen)
-        g.checkCollisions()
-        g.drawHealthBar(screen)
-        // g.drawLasers(screen)
         g.drawShip(screen)   
+        g.drawHealthBar(screen)
         g.moveAndDrawEnemyLasers(screen)
+        g.checkCollisions()
+        g.checkPlayerLaserCollision()
+        // g.drawLasers(screen)
         // check if game over
         g.checkGameOver()
     // game over instance
@@ -290,35 +335,61 @@ func (g *Game) Update(screen *ebiten.Image) error {
     return nil
 }
 
+// check if player got hit by enemy lasers
+func (g *Game) checkPlayerLaserCollision() {
+    // issues occur if you delete the same object during iteration
+    // instead have a list of lasers to delete and then delete them outside the loop
+    // check player lasers to player collisions
+    if (count % 5 == 0) {
+        for j := 0; j < len(g.ELasers); j++ {
+            pelHit := g.checkPlayerELaserCollision(j)
+            if (pelHit) {
+                g.Player.health -= 1
+                pelHit = false
+                g.removeEnemyLaser(j)
+            }
+        }
+    }
+}
+
 // not sure if I should "goroutine it all", it appears game is using goroutines already
 // goroutine still causes issues, I think I want collisions to be synced.
 func (g *Game) checkCollisions() {
-    for i := 0; i < len(g.Enemies); i++ {
-        s := g.Enemies[i]
-        // since we are only checking collision between all enemies and a single player, this approach is fine
-        pHit := g.checkPlayerEnemyCollision(s)
-        if (pHit) {
-            g.Player.health -= 3
-        }
-        for j :=0; j < len(g.PLasers); j++ {
+    if (count % 5 == 0) {
+        for i := 0; i < len(g.Enemies); i++ {
+            s := g.Enemies[i]
+            // since we are only checking collision between all enemies and a single player, this approach is fine
+            pHit := g.checkPlayerEnemyCollision(s)
+            if (pHit) {
+                g.Player.health -= 1
+            }
+            for j :=0; j < len(g.PLasers); j++ {
 
-            eHit := g.checkEnemyLaserCollision(s,j)
-            if (eHit) {
-                g.Player.health -= 0
-                eHit = false
-                g.removeLaser(j)
-                // make sure enemy exists before removing in, thats what you got to do with goroutines
-                if len(g.Enemies) > i {
-                    g.Enemies[i].health -= 3
+                eHit := g.checkEnemyLaserCollision(s,j)
+                if (eHit) {
+                    eHit = false
+                    g.removeLaser(j)
+                    // make sure enemy exists before removing in, thats what you got to do with goroutines
+                    if len(g.Enemies) > i {
+                        g.Enemies[i].health -= 3
+                    }
+                    // remove enemy, convert to explosion object that will be erased later
+
                 }
-                // remove enemy, convert to explosion object that will be erased later
-
             }
         }
     }
 }
 
 // Collision Functions
+
+// check laserEnemyCollision
+func  (g* Game) checkPlayerELaserCollision(j int) (bool) {
+    el := g.ELasers[j]
+    // adjust body to correct looking 
+    p := g.Player
+    return BodyCollided(&p.Body, &el.Body)
+}
 
 func (g* Game) checkEnemyLaserCollision(e* Enemy, j int) (bool) {
     p := g.PLasers[j]
@@ -375,32 +446,24 @@ func (g *Game) removeLaser(i int) {
         s[i] = s[len(s)-1]
         g.PLasers =  s[:len(s)-1]
     }
-    // fmt.Println(g.PLasers)
-    // https://stackoverflow.com/questions/37334119/how-to-delete-an-element-from-array-in-golang/37335777
-    // s[i] = s[len(s)-1]
-    // # We do not need to put s[i] at the end, as it will be discarded anyway
-    //return s[:len(s)-1]
 }
 
 // give player laser type, add laser struct to Player struct
 func (g *Game) shootLaser() {
     // if issue persists, use count instead of goroutine to determine when player can shoot
-    shootticker := time.NewTicker(125 * time.Millisecond)
-    go func() {
-        if ebiten.IsKeyPressed(ebiten.KeySpace) {
-            // Selects preloaded sprite
-            if (g.Player.canShoot) {
-                // make new laser
-                g.addLaser()
-                g.Player.canShoot = false
-            }
+    if ebiten.IsKeyPressed(ebiten.KeySpace) {
+        // Selects preloaded sprite
+        if (g.Player.canShoot) {
+            // make new laser
+            g.addLaser()
+            g.Player.canShoot = false
         }
-        defer shootticker.Stop()
-        for _ = range shootticker.C {
-            // fmt.Println("Can shoot laser")
-            g.Player.canShoot = true
-        }
-    }()
+    }
+    // wait 200 millseconds before player can shoot
+    if (count % 20 == 0) {
+        g.Player.canShoot = true
+    }
+
 }
 
 /*
@@ -409,8 +472,13 @@ func (g *Game) shootLaser() {
  */
 // adding new 
 func (g *Game) addLaser() {
-    px := g.Player.Body.x 
-    py := g.Player.Body.y 
+    laserPlayer.Rewind()
+    laserPlayer.Play()
+    _, _, _, ipw, iph := utils.ImageData(images[playerSpriteStartNum])
+    pw := float64(ipw)
+    ph := float64(iph)
+    px := g.Player.Body.x + pw / 2
+    py := g.Player.Body.y - ph
     // vx not used outside of initialization
     vx := 1.00
     vy := 3.00
@@ -445,8 +513,9 @@ func (g *Game) addEnemyLoc(snum int) {
 func (g *Game) addEnemyRand(snum int) {
     emax := 5 
     emin := -5
+    spawny := 0.75
     px := float64(rand.Intn(ScreenWidth))
-    py := float64(rand.Intn(ScreenHeight) - ScreenHeight / 8) 
+    py := float64(spawny*float64(rand.Intn(ScreenHeight)) + ScreenHeight / 8) 
     vx := float64(emin + rand.Intn(emax-emin+1))
     vy := float64(emin + rand.Intn(emax-emin+1))
 
@@ -454,6 +523,11 @@ func (g *Game) addEnemyRand(snum int) {
 
     health := 2
     g.Enemies = append(g.Enemies, &Enemy{Body{px, py, vx, vy, width, height}, snum, health})
+
+}
+
+// destroy all generated game objects, return player to starting point, etc ...
+func (g* Game) resetLevel() {
 
 }
 
@@ -474,8 +548,8 @@ func (g *Game) moveAndDrawEnemyLasers(screen *ebiten.Image) {
         s := g.ELasers[i]
         _, x, y, width, height := utils.ImageData(images[s.sp])
         op := &ebiten.DrawImageOptions{}
-        op.GeoM.Rotate(180 * math.Pi / 180)
         op.GeoM.Translate(float64(s.x), float64(s.y))
+        op.Filter = ebiten.FilterLinear
         screen.DrawImage(gameImages.SubImage(image.Rect(x, y, x+width, y+height)).(*ebiten.Image), op)
         if (s.y > ScreenHeight) {
             g.removeEnemyLaser(i)
@@ -498,7 +572,7 @@ func (g *Game) drawShip(screen *ebiten.Image) {
     // player ships from number 207 to 215
 	_, x, y, width, height := utils.ImageData(images[playerSpriteStartNum+i])
 	op.Filter = ebiten.FilterLinear
-	screen.DrawImage(gameImages.SubImage(image.Rect(x, y, x+width, y+height)).(*ebiten.Image), op)
+    screen.DrawImage(gameImages.SubImage(image.Rect(x, y, x+width, y+height)).(*ebiten.Image), op)
 }
 
 
@@ -558,7 +632,9 @@ func (g *Game) moveAndDrawEnemies(screen *ebiten.Image) {
 
         // make bullet be shot every 20 seconds
         if (count % 200 == 0) {
-            g.enemyShootLaser(s.x + float64(width / 2), s.y + float64(height))
+            elaserx := s.x
+            elasery := s.y
+            g.enemyShootLaser(elaserx, elasery)
         }
     }
     // go to next level if all enemies are dead
@@ -571,15 +647,12 @@ func (g *Game) moveAndDrawEnemies(screen *ebiten.Image) {
 func (g *Game) moveAndDrawLasers(screen *ebiten.Image) {
     // get player data to determine where bullet should spawn
     // consider getting global height width for player object later
-    _, _, _, ipw, iph := utils.ImageData(images[playerSpriteStartNum])
-    pw := float64(ipw)
-    ph := float64(iph)
     for i := 0; i < len(g.PLasers); i++ {
         s := g.PLasers[i]
         _, x, y, width, height := utils.ImageData(images[s.sp])
         op := &ebiten.DrawImageOptions{}
         // op.GeoM.Rotate(90 * math.Pi / 180)
-        op.GeoM.Translate(float64(s.x) + 5 + pw / 2, float64(s.y) - ph / 2)
+        op.GeoM.Translate(float64(s.x), float64(s.y))
         screen.DrawImage(gameImages.SubImage(image.Rect(x, y, x+width, y+height)).(*ebiten.Image), op)
         if (s.y < -float64(height)) {
             g.removeLaser(i)
@@ -609,7 +682,6 @@ func ScrollBG(screen *ebiten.Image) {
     }
 }
 
-// TODO Handle out of bounds cases
 func (g *Game) moveShip() {
 	// Controls
 	if ebiten.IsKeyPressed(ebiten.KeyA) || ebiten.IsKeyPressed(ebiten.KeyLeft) {
