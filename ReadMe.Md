@@ -5,13 +5,14 @@
 2. Have basic game.
 
 The game uses CC0 basic sprites and sounds.
-![alt text][screenshot1.png]
+![alt text](screenshot1.png)
 
 ### Todo Right now 
 
 - Let enemies shoot bullets, random spawning enemy function, health bar, player damaged by bullets, enemy destroyed and creates explosion class.
 
-![alt text][screenshot2.png]
+![alt text](screenshot2.png)
+
 ### Current Tasks
 
 1. ~~Create Enemy Class, types corresponding to images and/or movement speeds, maybe random number that represents sprites.~~
