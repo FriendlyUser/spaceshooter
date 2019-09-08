@@ -1,3 +1,8 @@
+// Package main provides primitives for sorting slices and user-defined
+// collections.
+
+// TODO figure out mobile development
+// 1. move player to cursor and tapping ship shoots laser??
 package main
 
 // imported packages, most of them are for the golang game engine
@@ -246,6 +251,9 @@ func (g *Game) CreateLevel() {
     g.level = g.level + 1 
     gameLevel := g.level + 10
     enemySprite := 50
+    // clear bullets 
+    g.PLasers = nil
+    g.ELasers = nil
     // spawn enemies based on level
     for i := 1; i <= gameLevel; i++ {
         enemySprite = (rand.Intn(10)) + 50
