@@ -1,3 +1,4 @@
+[![Documentation](https://godoc.org/github.com/FriendlyUser/spaceshooter?status.svg)](https://godoc.org/github.com/FriendlyUser/spaceshooter)
 ##### Space Shooter Game
 
 
